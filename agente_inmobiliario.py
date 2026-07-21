@@ -1,9 +1,8 @@
 """
-AGENTE INMOBILIARIO EN PYTHON (Optimizado para GitHub Actions)
---------------------------------------------------------------
+AGENTE INMOBILIARIO EN PYTHON (Multi-RSS Test)
+----------------------------------------------
 Búsqueda de Casas/Chalets cerca de Barcelona
-- Precio máximo: 320.000 €
-- Requisitos: Garaje y Piscina
+- Prueba múltiples fuentes RSS en paralelo
 - Notificaciones vía Telegram
 """
 
@@ -28,16 +27,17 @@ class AgenteInmobiliario:
         self.vistas = self.cargar_historial()
 
     def cargar_configuracion(self):
-        # 1. Prioridad: Leer las variables de entorno de GitHub Actions
         token_env = os.getenv("TELEGRAM_BOT_TOKEN")
         chat_id_env = os.getenv("TELEGRAM_CHAT_ID")
+        scraper_key_env = os.getenv("SCRAPER_API_KEY")
 
         if token_env and chat_id_env:
-            logging.info("Cargando credenciales desde variables de entorno (GitHub Secrets).")
+            logging.info("Cargando credenciales desde GitHub Secrets.")
             return {
                 "precio_maximo": 320000,
                 "requiere_garaje": True,
                 "requiere_piscina": True,
+                "scraper_api_key": scraper_key_env or "",
                 "telegram": {
                     "activo": True,
                     "bot_token": token_env,
@@ -45,21 +45,16 @@ class AgenteInmobiliario:
                 }
             }
 
-        # 2. Si no hay variables de entorno, intenta usar config.json local
         if os.path.exists(self.config_path):
             with open(self.config_path, "r", encoding="utf-8") as f:
                 return json.load(f)
 
-        # 3. Valores por defecto si nada existe
         return {
             "precio_maximo": 320000,
             "requiere_garaje": True,
             "requiere_piscina": True,
-            "telegram": {
-                "activo": False,
-                "bot_token": "",
-                "chat_id": ""
-            }
+            "scraper_api_key": "",
+            "telegram": {"activo": False, "bot_token": "", "chat_id": ""}
         }
 
     def cargar_historial(self):
@@ -117,21 +112,39 @@ class AgenteInmobiliario:
             logging.error(f"Error conectando con Telegram: {e}")
 
     def buscar_propiedades(self):
-        logging.info("Iniciando búsqueda de viviendas...")
+        logging.info("Iniciando búsqueda probando múltiples fuentes RSS...")
 
-        user_agent_browser = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-
+        # Lista de feeds de metabuscadores variados
         urls_rss = [
+            # Trovit - Búsqueda general casas Barcelona
             "https://inmuebles.trovit.es/index.php/cod.rss_search/type.1/what_d.casa/where_d.Barcelona/price_max.320000",
-            "https://inmuebles.trovit.es/index.php/cod.rss_search/type.1/what_d.chalet/where_d.Barcelona/price_max.320000"
+            # Trovit - Chalets
+            "https://inmuebles.trovit.es/index.php/cod.rss_search/type.1/what_d.chalet/where_d.Barcelona/price_max.320000",
+            # Mitula - Casas en Barcelona
+            "https://casas.mitula.com/index.php/cod.rss_search/type.1/what_d.casa/where_d.Barcelona/price_max.320000",
+            # Nuroa - Casas en Barcelona
+            "https://www.nuroa.es/index.php/cod.rss_search/type.1/what_d.casa/where_d.Barcelona/price_max.320000"
         ]
+
+        scraper_key = self.config.get("scraper_api_key", "")
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
 
         propiedades_encontradas = []
 
-        for url in urls_rss:
+        for i, url in enumerate(urls_rss, 1):
             try:
-                feed = feedparser.parse(url, agent=user_agent_browser)
-                logging.info(f"Anuncios leídos del feed: {len(feed.entries)}")
+                if scraper_key:
+                    target_url = f"http://api.scraperapi.com?api_key={scraper_key}&url={url}"
+                    res = requests.get(target_url, timeout=20)
+                    feed = feedparser.parse(res.content)
+                else:
+                    res = requests.get(url, headers=headers, timeout=15)
+                    feed = feedparser.parse(res.content)
+
+                num_elementos = len(feed.entries)
+                logging.info(f" -> Fuente #{i} ({url.split('/')[2]}): {num_elementos} anuncios leídos.")
 
                 for entry in feed.entries:
                     titulo = entry.get("title", "")
@@ -157,7 +170,7 @@ class AgenteInmobiliario:
                         "url": link
                     })
             except Exception as e:
-                logging.error(f"Error leyendo feed: {e}")
+                logging.error(f"Error consultando Fuente #{i}: {e}")
 
         nuevas_encontradas = 0
         for prop in propiedades_encontradas:
@@ -171,7 +184,7 @@ class AgenteInmobiliario:
                 nuevas_encontradas += 1
 
         self.guardar_historial()
-        logging.info(f"Búsqueda finalizada. Nuevas avisadas: {nuevas_encontradas}")
+        logging.info(f"Búsqueda finalizada. Total avisadas hoy: {nuevas_encontradas}")
 
 if __name__ == "__main__":
     agente = AgenteInmobiliario()
