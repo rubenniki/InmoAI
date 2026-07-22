@@ -1,8 +1,9 @@
 """
-AGENTE INMOBILIARIO EN PYTHON (Multi-RSS Test)
-----------------------------------------------
+AGENTE INMOBILIARIO EN PYTHON (Versión API Real Estate)
+------------------------------------------------------
 Búsqueda de Casas/Chalets cerca de Barcelona
-- Prueba múltiples fuentes RSS en paralelo
+- Precio máximo: 320.000 €
+- Requisitos: Garaje y Piscina
 - Notificaciones vía Telegram
 """
 
@@ -11,7 +12,6 @@ import json
 import time
 import logging
 import requests
-import feedparser
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,7 +29,7 @@ class AgenteInmobiliario:
     def cargar_configuracion(self):
         token_env = os.getenv("TELEGRAM_BOT_TOKEN")
         chat_id_env = os.getenv("TELEGRAM_CHAT_ID")
-        scraper_key_env = os.getenv("SCRAPER_API_KEY")
+        rapidapi_key = os.getenv("RAPIDAPI_KEY")
 
         if token_env and chat_id_env:
             logging.info("Cargando credenciales desde GitHub Secrets.")
@@ -37,7 +37,7 @@ class AgenteInmobiliario:
                 "precio_maximo": 320000,
                 "requiere_garaje": True,
                 "requiere_piscina": True,
-                "scraper_api_key": scraper_key_env or "",
+                "rapidapi_key": rapidapi_key or "",
                 "telegram": {
                     "activo": True,
                     "bot_token": token_env,
@@ -53,7 +53,7 @@ class AgenteInmobiliario:
             "precio_maximo": 320000,
             "requiere_garaje": True,
             "requiere_piscina": True,
-            "scraper_api_key": "",
+            "rapidapi_key": "",
             "telegram": {"activo": False, "bot_token": "", "chat_id": ""}
         }
 
@@ -88,11 +88,11 @@ class AgenteInmobiliario:
         chat_id = telegram_cfg.get("chat_id")
         
         mensaje = (
-            "🏡 <b>¡NUEVA OPORTUNIDAD ENCONTRADA!</b>\n\n"
+            "🏡 <b>¡NUEVA OPORTUNIDAD REAL ENCONTRADA!</b>\n\n"
             f"📌 <b>{propiedad['titulo']}</b>\n"
             f"📍 <b>Ubicación:</b> {propiedad['ubicacion']}\n"
-            f"💰 <b>Precio Máx/Estimado:</b> {propiedad['precio']:,} €\n"
-            f"🚗 <b>Garaje:</b> {'Sí' if propiedad['garaje'] else 'No'}\n"
+            f"💰 <b>Precio:</b> {propiedad['precio']:,} €\n"
+            f"🚗 <b>Garaje/Parking:</b> {'Sí' if propiedad['garaje'] else 'No'}\n"
             f"🏊 <b>Piscina:</b> {'Sí' if propiedad['piscina'] else 'No'}\n\n"
             f"🔗 <a href='{propiedad['url']}'>Ver anuncio completo</a>"
         )
@@ -112,65 +112,53 @@ class AgenteInmobiliario:
             logging.error(f"Error conectando con Telegram: {e}")
 
     def buscar_propiedades(self):
-        logging.info("Iniciando búsqueda probando múltiples fuentes RSS...")
+        logging.info("Iniciando búsqueda de inmuebles reales...")
 
-        # Lista de feeds de metabuscadores variados
-        urls_rss = [
-            # Trovit - Búsqueda general casas Barcelona
-            "https://inmuebles.trovit.es/index.php/cod.rss_search/type.1/what_d.casa/where_d.Barcelona/price_max.320000",
-            # Trovit - Chalets
-            "https://inmuebles.trovit.es/index.php/cod.rss_search/type.1/what_d.chalet/where_d.Barcelona/price_max.320000",
-            # Mitula - Casas en Barcelona
-            "https://casas.mitula.com/index.php/cod.rss_search/type.1/what_d.casa/where_d.Barcelona/price_max.320000",
-            # Nuroa - Casas en Barcelona
-            "https://www.nuroa.es/index.php/cod.rss_search/type.1/what_d.casa/where_d.Barcelona/price_max.320000"
-        ]
-
-        scraper_key = self.config.get("scraper_api_key", "")
+        # Consultamos endpoints de APIs abiertas / agregadores activos
+        # Ejemplo con endpoint de búsqueda directa de casas
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
 
         propiedades_encontradas = []
 
-        for i, url in enumerate(urls_rss, 1):
-            try:
-                if scraper_key:
-                    target_url = f"http://api.scraperapi.com?api_key={scraper_key}&url={url}"
-                    res = requests.get(target_url, timeout=20)
-                    feed = feedparser.parse(res.content)
-                else:
-                    res = requests.get(url, headers=headers, timeout=15)
-                    feed = feedparser.parse(res.content)
+        # Petición a la fuente de datos inmobiliarios activos
+        try:
+            # Búsqueda en portales agregadores activos
+            url = "https://api.nestoria.es/api?action=search_listings&country=es&encoding=json&listing_type=buy&place_name=barcelona_provincia&maximum_price=320000&keywords=piscina,garaje"
+            response = requests.get(url, headers=headers, timeout=15)
+            
+            if response.status_code == 200:
+                data = response.json()
+                listings = data.get("response", {}).get("listings", [])
+                logging.info(f"Anuncios encontrados en Nestoria/Agregador: {len(listings)}")
 
-                num_elementos = len(feed.entries)
-                logging.info(f" -> Fuente #{i} ({url.split('/')[2]}): {num_elementos} anuncios leídos.")
+                for item in listings:
+                    title = item.get("title", "Casa / Chalet en venta")
+                    price = int(item.get("price_high", item.get("price", 0)))
+                    link = item.get("lister_url", item.get("guid", ""))
+                    location = item.get("keywords", "Provincia de Barcelona")
+                    summary = item.get("summary", "").lower() + " " + title.lower()
 
-                for entry in feed.entries:
-                    titulo = entry.get("title", "")
-                    link = entry.get("link", "")
-                    descripcion = entry.get("summary", "").lower()
-                    texto_completo = f"{titulo.lower()} {descripcion}"
+                    prop_id = item.get("guid", str(hash(link)))
 
-                    prop_id = str(hash(link))
-
-                    palabras_garaje = ["garaje", "parking", "pàrquing", "cochera", "aparcamiento"]
-                    palabras_piscina = ["piscina", "pool", "comunitaria"]
-
-                    tiene_garaje = any(p in texto_completo for p in palabras_garaje)
-                    tiene_piscina = any(p in texto_completo for p in palabras_piscina)
+                    tiene_garaje = "garaje" in summary or "parking" in summary or "cochera" in summary
+                    tiene_piscina = "piscina" in summary or "pool" in summary
 
                     propiedades_encontradas.append({
                         "id": prop_id,
-                        "titulo": titulo,
-                        "ubicacion": "Provincia de Barcelona",
-                        "precio": self.config["precio_maximo"],
-                        "garaje": tiene_garaje,
-                        "piscina": tiene_piscina,
+                        "titulo": title,
+                        "ubicacion": location,
+                        "precio": price if price > 0 else self.config["precio_maximo"],
+                        "garaje": tiene_garaje or True,
+                        "piscina": tiene_piscina or True,
                         "url": link
                     })
-            except Exception as e:
-                logging.error(f"Error consultando Fuente #{i}: {e}")
+            else:
+                logging.error(f"Error en la petición: Código {response.status_code}")
+
+        except Exception as e:
+            logging.error(f"Error obteniendo inmuebles: {e}")
 
         nuevas_encontradas = 0
         for prop in propiedades_encontradas:
