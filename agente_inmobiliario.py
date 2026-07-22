@@ -1,6 +1,6 @@
 """
-AGENTE INMOBILIARIO EN PYTHON (Versión API Real Estate + SSL Bypass)
--------------------------------------------------------------------
+AGENTE INMOBILIARIO EN PYTHON (Versión CloudScraper)
+---------------------------------------------------
 Búsqueda de Casas/Chalets cerca de Barcelona
 - Precio máximo: 320.000 €
 - Requisitos: Garaje y Piscina
@@ -12,8 +12,9 @@ import json
 import time
 import logging
 import requests
+import cloudscraper
 
-# Desactivar advertencias de SSL inseguro en el log
+# Desactivar advertencias de urllib3
 requests.packages.urllib3.disable_warnings()
 
 logging.basicConfig(
@@ -115,19 +116,23 @@ class AgenteInmobiliario:
             logging.error(f"Error conectando con Telegram: {e}")
 
     def buscar_propiedades(self):
-        logging.info("Iniciando búsqueda de inmuebles reales...")
-
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-        }
+        logging.info("Iniciando búsqueda de inmuebles con emulador de cliente...")
 
         propiedades_encontradas = []
 
         try:
+            # Crear sesión emulada con cloudscraper
+            scraper = cloudscraper.create_scraper(
+                browser={
+                    'browser': 'chrome',
+                    'platform': 'windows',
+                    'desktop': True
+                }
+            )
+
             url = "https://api.nestoria.es/api?action=search_listings&country=es&encoding=json&listing_type=buy&place_name=barcelona_provincia&maximum_price=320000&keywords=piscina,garaje"
             
-            # verify=False ignora la falta de certificados CA en el runner de GitHub
-            response = requests.get(url, headers=headers, timeout=15, verify=False)
+            response = scraper.get(url, timeout=15)
             
             if response.status_code == 200:
                 data = response.json()
