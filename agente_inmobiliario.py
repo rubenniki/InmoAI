@@ -1,6 +1,6 @@
 """
-AGENTE INMOBILIARIO EN PYTHON (Versión API Real Estate)
-------------------------------------------------------
+AGENTE INMOBILIARIO EN PYTHON (Versión API Real Estate + SSL Bypass)
+-------------------------------------------------------------------
 Búsqueda de Casas/Chalets cerca de Barcelona
 - Precio máximo: 320.000 €
 - Requisitos: Garaje y Piscina
@@ -12,6 +12,9 @@ import json
 import time
 import logging
 import requests
+
+# Desactivar advertencias de SSL inseguro en el log
+requests.packages.urllib3.disable_warnings()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -114,24 +117,22 @@ class AgenteInmobiliario:
     def buscar_propiedades(self):
         logging.info("Iniciando búsqueda de inmuebles reales...")
 
-        # Consultamos endpoints de APIs abiertas / agregadores activos
-        # Ejemplo con endpoint de búsqueda directa de casas
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
 
         propiedades_encontradas = []
 
-        # Petición a la fuente de datos inmobiliarios activos
         try:
-            # Búsqueda en portales agregadores activos
             url = "https://api.nestoria.es/api?action=search_listings&country=es&encoding=json&listing_type=buy&place_name=barcelona_provincia&maximum_price=320000&keywords=piscina,garaje"
-            response = requests.get(url, headers=headers, timeout=15)
+            
+            # verify=False ignora la falta de certificados CA en el runner de GitHub
+            response = requests.get(url, headers=headers, timeout=15, verify=False)
             
             if response.status_code == 200:
                 data = response.json()
                 listings = data.get("response", {}).get("listings", [])
-                logging.info(f"Anuncios encontrados en Nestoria/Agregador: {len(listings)}")
+                logging.info(f"Anuncios encontrados en la API: {len(listings)}")
 
                 for item in listings:
                     title = item.get("title", "Casa / Chalet en venta")
